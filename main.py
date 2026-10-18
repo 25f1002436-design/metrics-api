@@ -2,27 +2,37 @@ import time
 import uuid
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
-EMAIL = "25f1002436@ds.study.iitm.ac.in"  # <-- change this to your logged-in email
+EMAIL = "25f1002436@ds.study.iitm.ac.in"
 ALLOWED_ORIGIN = "https://dash-96ez77.example.com"
 
 app = FastAPI(title="Metrics API")
 
-# CORS is added first so the header middleware below wraps it,
-# so X-Request-ID / X-Process-Time also appear on preflight responses.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[ALLOWED_ORIGIN],  # strict, no wildcard
-    allow_methods=["GET", "OPTIONS"],
-    allow_headers=["*"],
-)
-
 
 @app.middleware("http")
-async def add_headers(request: Request, call_next):
+async def cors_and_headers(request: Request, call_next):
     start = time.perf_counter()
-    response = await call_next(request)
+    origin = request.headers.get("origin")
+    allowed = origin == ALLOWED_ORIGIN
+
+    if request.method == "OPTIONS":
+        if allowed:
+            response = Response(status_code=200)
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = (
+                request.headers.get("access-control-request-headers") or "*"
+            )
+            response.headers["Access-Control-Max-Age"] = "600"
+        else:
+            response = Response(status_code=403)  # no ACAO header
+    else:
+        response = await call_next(request)
+
+    if allowed:
+        response.headers["Access-Control-Allow-Origin"] = ALLOWED_ORIGIN
+        response.headers["Vary"] = "Origin"
+
     response.headers["X-Request-ID"] = str(uuid.uuid4())
     response.headers["X-Process-Time"] = f"{time.perf_counter() - start:.6f}"
     return response
